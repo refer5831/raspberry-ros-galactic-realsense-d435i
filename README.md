@@ -77,7 +77,7 @@ source install/setup.bash
 ```
 If you have some errors during the build process,you may need to reduce setuptools' version
 ```javascript
-sudo apt install setupyools==50.0.0
+sudo apt install setupyools==58.0.0
 ```
 Then *colcon build* in yolo's workspace
 ## Check yolov5 and reduce huggingface-hub
@@ -99,4 +99,98 @@ In third terminal,run
 ros2 topic echo /yolo_result
 ```
 This will show you the test results
+
+## How can the Raspberry PI results be applied to other boards?
+### Communication using different levels
+Since I forgot the interface to prevent serial communication on the esp32-wroom-32e and stm32g431cbu6 boards, and my motor control interface happened to have two Hall encoder pulse return values, I used high and low levels to communicate between the boards
+#### On raspberry
+You must install package which will be used
+```javascript
+sudo apt update
+sudo apt install python3-rpi.gpio
+```
+Create workspace
+```javascript
+mkdir -p ~/ros2_gpio_ws/src
+cd ~/ros2_gpio_ws/src
+```
+Create pacakge in src
+```javascript
+cd src
+ros2 pkg create --build-type ament_python gpio_control
+```
+Write source code
+```javascript
+cd gpio_control
+mkdir gpio_control
+touch gpio_control/gpio_node.py
+vim gpio_node.py
+```
+gpio_node.py:
+```javascript
+import rclpy
+from rclpy.node import Node
+import RPi.GPIO as GPIO
+from time import sleep
+
+class GPIOControlNode(Node):
+    def __init__(self):
+        super().__init__('gpio_control_node')
+        
+        # 设置GPIO模式
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(18, GPIO.OUT)  # GPIO 18 is output
+
+        self.timer = self.create_timer(1.0, self.toggle_gpio)  # change time
+        self.state = False
+
+    def toggle_gpio(self):
+        self.state = not self.state
+        GPIO.output(18, self.state)
+        self.get_logger().info(f'GPIO 18 is {"HIGH" if self.state else "LOW"}')
+
+    def destroy_node(self):
+        GPIO.cleanup()  # 清理GPIO状态
+        super().destroy_node()
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = GPIOControlNode()
+
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
+```
+Update setup.py
+```javascript
+# In ws/src/gpio_control/setup.py
+vim setup.py
+```
+Add node information as
+```javascript
+entry_points={ # exist
+    'console_scripts': [ # exist 
+        'gpio_control = gpio_control.gpio_node:main', # you add
+    ], # exist
+}, # exist
+```
+Build it
+```javascript
+# In your ws
+colcon build
+```
+In this step,you may need to tier down the setuptools just like sudo apt install setupyools==58.0.0
+
+Then,you can run it
+# In your ws
+source install/setup.bash
+ros2 run gpio_control gpio_control
+```
 ### End
