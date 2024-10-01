@@ -189,8 +189,30 @@ colcon build
 In this step,you may need to tier down the setuptools just like sudo apt install setupyools==58.0.0
 
 Then,you can run it
-# In your ws
+In your ws
+```javascript
 source install/setup.bash
 ros2 run gpio_control gpio_control
 ```
+If you have some trouble like "RuntimeError: Not running on a RPi!"
+just run su!,source ws and run again.
+#### On Esp32
+just choose your pin
+```javascript
+from machine import Pin
+import time
+
+input_pin = Pin(18, Pin.IN)
+
+def read_gpio():
+    while True:
+        value = input_pin.value()
+        print("GPIO Input Value:", value)
+        time.sleep(1)
+
+if __name__ == "__main__":
+    read_gpio()
+
+```
+Connect esp32 and raspberry,you can certificate this work successful or not.
 ### End
