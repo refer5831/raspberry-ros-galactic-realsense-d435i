@@ -332,4 +332,225 @@ cd listen
 source install/setup.bash
 ros2 run listen listen
 ```
+This is detect cell phone code：
+```python
+import rclpy
+from rclpy.node import Node
+from vision_msgs.msg import Detection2DArray
+from std_msgs.msg import String
+
+class YoloResultListener(Node):
+    def __init__(self):
+        super().__init__('yolo_result_listener')
+
+        # 订阅 'yolo_result' 话题，消息类型为 Detection2DArray
+        self.subscription = self.create_subscription(
+            Detection2DArray,
+            'yolo_result',
+            self.listener_callback,
+            10
+        )
+        self.subscription  # 防止被垃圾回收
+
+        # 创建发布者，发布监听到的消息或状态
+        self.publisher_ = self.create_publisher(String, 'yolo_result_feedback', 10)
+        
+        # 每秒调用一次 timer_callback
+        self.timer = self.create_timer(1.0, self.timer_callback)
+
+        # 用于存储接收到的消息和状态
+        self.last_message = None
+        self.topic_detected = False
+
+        self.get_logger().info('Yolo Result Listener Node has been started')
+
+    def listener_callback(self, msg):
+        # 遍历检测信息，寻找 class_id 为 "cell phone" 的对象
+        found_cell_phone = False
+        for detection in msg.detections:
+            for result in detection.results:
+                class_id = result.hypothesis.class_id
+                score = result.hypothesis.score
+                if class_id == "cell phone":
+                    bbox_center_x = detection.bbox.center.x
+                    bbox_center_y = detection.bbox.center.y
+                    bbox_size_x = detection.bbox.size_x
+                    bbox_size_y = detection.bbox.size_y
+                    # 找到 cell phone 的检测结果
+                    self.last_message = f"Class: {class_id}, Score: {score:.2f}, BBox center: ({bbox_center_x}, {bbox_center_y}), Size: ({bbox_size_x}, {bbox_size_y})"
+                    found_cell_phone = True
+                    break  # 找到 cell phone 后不再继续寻找
+
+        if not found_cell_phone:
+            self.last_message = "no cell phone"
+
+        # 标记话题已被检测到
+        self.topic_detected = True
+        self.get_logger().info(f'Heard yolo_result message: "{self.last_message}"')
+
+    def timer_callback(self):
+        msg = String()
+
+        if not self.topic_detected:
+            # 没有检测到话题
+            msg.data = 'no detect topic'
+        elif self.last_message is None:
+            # 话题存在但没有收到消息
+            msg.data = 'no message listen'
+        else:
+            # 有消息，发布消息内容
+            msg.data = f'Yolo result: {self.last_message}'
+
+        # 发布消息
+        self.publisher_.publish(msg)
+        self.get_logger().info(f'Publishing: "{msg.data}"')
+
+        # 重置状态
+        self.last_message = None
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    # 创建节点
+    node = YoloResultListener()
+
+    # 保持节点运行
+    rclpy.spin(node)
+
+    # 销毁节点
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+Since you're using realsense,why not detect depth images?
+just change listen_node.py
+```python
+import rclpy
+from rclpy.node import Node
+from vision_msgs.msg import Detection2DArray
+from std_msgs.msg import String
+from sensor_msgs.msg import Image
+import cv2
+from cv_bridge import CvBridge, CvBridgeError
+import numpy as np
+
+class YoloResultListener(Node):
+    def __init__(self):
+        super().__init__('yolo_result_listener')
+
+        # 订阅 'yolo_result' 话题，消息类型为 Detection2DArray
+        self.subscription = self.create_subscription(
+            Detection2DArray,
+            'yolo_result',
+            self.listener_callback,
+            10
+        )
+        self.subscription  # 防止被垃圾回收
+
+        # 订阅深度图像话题
+        self.depth_subscription = self.create_subscription(
+            Image,
+            '/camera/depth/image_rect_raw',
+            self.depth_callback,
+            10
+        )
+        self.depth_image = None
+        self.bridge = CvBridge()
+
+        # 创建发布者，发布监听到的消息或状态
+        self.publisher_ = self.create_publisher(String, 'yolo_result_feedback', 10)
+        
+        # 每秒调用一次 timer_callback
+        self.timer = self.create_timer(1.0, self.timer_callback)
+
+        # 用于存储接收到的消息和状态
+        self.last_message = None
+        self.topic_detected = False
+
+        self.get_logger().info('Yolo Result Listener Node has been started')
+
+    def listener_callback(self, msg):
+        # 遍历检测信息，寻找 class_id 为 "cell phone" 的对象
+        found_cell_phone = False
+        for detection in msg.detections:
+            for result in detection.results:
+                class_id = result.hypothesis.class_id
+                score = result.hypothesis.score
+                if class_id == "cell phone":
+                    bbox_center_x = int(detection.bbox.center.x)
+                    bbox_center_y = int(detection.bbox.center.y)
+                    bbox_size_x = detection.bbox.size_x
+                    bbox_size_y = detection.bbox.size_y
+
+                    # 确认深度图像存在
+                    if self.depth_image is not None:
+                        try:
+                            # 获取检测框中心点的深度值
+                            depth_value = self.depth_image[bbox_center_y, bbox_center_x] * 0.001  # 转换为米
+                            self.last_message = f"Class: {class_id}, Score: {score:.2f}, BBox center: ({bbox_center_x}, {bbox_center_y}), Size: ({bbox_size_x}, {bbox_size_y}), Depth: {depth_value:.2f} meters"
+                        except IndexError:
+                            self.last_message = f"Class: {class_id}, Score: {score:.2f}, BBox center: ({bbox_center_x}, {bbox_center_y}), Size: ({bbox_size_x}, {bbox_size_y}), Depth: out of bounds"
+                    else:
+                        self.last_message = f"Class: {class_id}, Score: {score:.2f}, BBox center: ({bbox_center_x}, {bbox_center_y}), Size: ({bbox_size_x}, {bbox_size_y}), No depth data"
+
+                    found_cell_phone = True
+                    break  # 找到 cell phone 后不再继续寻找
+
+        if not found_cell_phone:
+            self.last_message = "no cell phone"
+
+        # 标记话题已被检测到
+        self.topic_detected = True
+        self.get_logger().info(f'Heard yolo_result message: "{self.last_message}"')
+
+    def depth_callback(self, depth_msg):
+        # 将深度图像消息转换为OpenCV格式
+        try:
+            self.depth_image = self.bridge.imgmsg_to_cv2(depth_msg, "16UC1")
+        except CvBridgeError as e:
+            self.get_logger().error(f"Depth image conversion failed: {e}")
+
+    def timer_callback(self):
+        msg = String()
+
+        if not self.topic_detected:
+            # 没有检测到话题
+            msg.data = 'no detect topic'
+        elif self.last_message is None:
+            # 话题存在但没有收到消息
+            msg.data = 'no message listen'
+        else:
+            # 有消息，发布消息内容
+            msg.data = f'Yolo result: {self.last_message}'
+
+        # 发布消息
+        self.publisher_.publish(msg)
+        self.get_logger().info(f'Publishing: "{msg.data}"')
+
+        # 重置状态
+        self.last_message = None
+
+
+def main(args=None):
+    rclpy.init(args=args)
+
+    # 创建节点
+    node = YoloResultListener()
+
+    # 保持节点运行
+    rclpy.spin(node)
+
+    # 销毁节点
+    node.destroy_node()
+    rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+
+```
 ### End
