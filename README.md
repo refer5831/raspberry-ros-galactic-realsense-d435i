@@ -127,7 +127,7 @@ touch gpio_control/gpio_node.py
 vim gpio_node.py
 ```
 gpio_node.py:
-```
+```python
 import rclpy
 from rclpy.node import Node
 import RPi.GPIO as GPIO
@@ -169,12 +169,12 @@ if __name__ == '__main__':
     main()
 ```
 Update setup.py
-```javascript
+```
 # In ws/src/gpio_control/setup.py
 vim setup.py
 ```
 Add node information as
-```javascript
+```
 entry_points={ # exist
     'console_scripts': [ # exist 
         'gpio_control = gpio_control.gpio_node:main', # you add
@@ -182,7 +182,7 @@ entry_points={ # exist
 }, # exist
 ```
 Build it
-```javascript
+```
 # In your ws
 colcon build
 ```
@@ -190,7 +190,7 @@ In this step,you may need to tier down the setuptools just like sudo apt install
 
 Then,you can run it
 In your ws
-```javascript
+```
 source install/setup.bash
 ros2 run gpio_control gpio_control
 ```
@@ -198,7 +198,7 @@ If you have some trouble like "RuntimeError: Not running on a RPi!"
 just run su!,source ws and run again.
 #### On Esp32
 just choose your pin
-```javascript
+```python
 from machine import Pin
 import time
 
@@ -219,7 +219,7 @@ Connect esp32 and raspberry,you can certificate this work successful or not.
 ## How can I use yolo result to control what signals are output
 ### First,you must create a listener package and node
 Create a package
-```javascript
+```
 mkdir -p listen/src
 cd listen/src
 ros2 pkg create --build-type ament_python listen
@@ -238,29 +238,29 @@ class YoloResultListener(Node):
     def __init__(self):
         super().__init__('yolo_result_listener')
 
-        # 订阅 'yolo_result' 话题，消息类型为 Detection2DArray
+
         self.subscription = self.create_subscription(
             Detection2DArray,
             'yolo_result',
             self.listener_callback,
             10
         )
-        self.subscription  # 防止被垃圾回收
+        self.subscription  
 
-        # 创建发布者，发布监听到的消息或状态
+
         self.publisher_ = self.create_publisher(String, 'yolo_result_feedback', 10)
         
-        # 每秒调用一次 timer_callback
+
         self.timer = self.create_timer(1.0, self.timer_callback)
 
-        # 用于存储接收到的消息和状态
+
         self.last_message = None
         self.topic_detected = False
 
         self.get_logger().info('Yolo Result Listener Node has been started')
 
     def listener_callback(self, msg):
-        # 当收到 Detection2DArray 消息时，解析每个检测对象的信息
+
         if len(msg.detections) > 0:
             detection_info = []
             for detection in msg.detections:
@@ -271,15 +271,15 @@ class YoloResultListener(Node):
                     bbox_center_y = detection.bbox.center.y
                     bbox_size_x = detection.bbox.size_x
                     bbox_size_y = detection.bbox.size_y
-                    # 组装检测结果的信息
+
                     detection_info.append(f"Class: {class_id}, Score: {score:.2f}, BBox center: ({bbox_center_x}, {bbox_center_y}), Size: ({bbox_size_x}, {bbox_size_y})")
             
-            # 将解析结果合并为一个字符串
+
             self.last_message = "; ".join(detection_info)
         else:
             self.last_message = 'no message listen'
 
-        # 标记话题已被检测到
+
         self.topic_detected = True
         self.get_logger().info(f'Heard yolo_result message: "{self.last_message}"')
 
@@ -287,38 +287,49 @@ class YoloResultListener(Node):
         msg = String()
 
         if not self.topic_detected:
-            # 没有检测到话题
+
             msg.data = 'no detect topic'
         elif self.last_message is None:
-            # 话题存在但没有收到消息
+
             msg.data = 'no message listen'
         else:
-            # 有消息，发布消息内容
+
             msg.data = f'Yolo result: {self.last_message}'
 
-        # 发布消息
         self.publisher_.publish(msg)
         self.get_logger().info(f'Publishing: "{msg.data}"')
 
-        # 重置状态
         self.last_message = None
 
 
 def main(args=None):
     rclpy.init(args=args)
 
-    # 创建节点
+
     node = YoloResultListener()
 
-    # 保持节点运行
     rclpy.spin(node)
 
-    # 销毁节点
     node.destroy_node()
     rclpy.shutdown()
 
 
 if __name__ == '__main__':
     main()
+```
+Change setup.py as
+```python
+    entry_points={
+        'console_scripts': [
+            'listen = listen.listen_node:main',
+        ],
+
+```
+Then,you can run it.
+```
+cd
+cd listen
+source install/setup.bash
+ros2 run listen listen
 ```
 ### End
